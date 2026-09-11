@@ -70,13 +70,13 @@ bookstore-docker2/
 ### Containers e comunicação
 
 ```text
-┌─────────────────────────────┐        ┌─────────────────────────────┐
-│         web (Django)        │        │        db (PostgreSQL)      │
-│  imagem: bookstore-docker2  │        │   imagem: postgres:16-alpine│
-│  porta: 8000 → 8000          │───────▶│  porta: 5432 → 5432          │
-│  lê variáveis de .env.dev    │  SQL   │  volume: postgres_data       │
-└─────────────────────────────┘        └─────────────────────────────┘
-        depende_de: db (aguarda healthcheck do banco)
+┌───────────────────────────────┐        ┌───────────────────────────────┐
+│         web (Django)          │        │        db (PostgreSQL)        │
+│  imagem: bookstore-docker2    │  SQL   │   imagem: postgres:16-alpine  │
+│  porta: 8000 → 8000            │───────▶│  porta: 5432 → 5432            │
+│  lê variáveis de .env.dev      │        │  volume: postgres_data         │
+└───────────────────────────────┘        └───────────────────────────────┘
+        depende de: db (aguarda healthcheck do banco)
 ```
 
 Os dois serviços rodam na mesma rede interna criada pelo Docker Compose (`bookstore-docker2_default`), e o `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost`.
@@ -101,10 +101,18 @@ git clone https://github.com/RogerioFernandesSilva/bookstore-docker2.git
 cd bookstore-docker2
 ```
 
-### 2. Build e subida dos containers
+### 2. Configurar as variáveis de ambiente
+
+Copie o arquivo de exemplo e ajuste os valores conforme necessário:
 
 ```bash
-docker compose up --build
+cp .env.dev.example .env.dev
+```
+
+### 3. Build e subida dos containers
+
+```bash
+docker compose --env-file .env.dev up --build
 ```
 
 Isso sobe dois serviços:
@@ -114,10 +122,12 @@ Isso sobe dois serviços:
 Para rodar em segundo plano (sem travar o terminal):
 
 ```bash
-docker compose up -d
+docker compose --env-file .env.dev up -d
 ```
 
-### 3. Aplicar as migrações
+> 💡 Se o arquivo se chamar apenas `.env` (em vez de `.env.dev`), o Docker Compose lê as variáveis automaticamente e a flag `--env-file` pode ser omitida.
+
+### 4. Aplicar as migrações
 
 Em outro terminal, com os containers em execução:
 
@@ -125,13 +135,13 @@ Em outro terminal, com os containers em execução:
 docker compose exec web python manage.py migrate
 ```
 
-### 4. Criar um superusuário
+### 5. Criar um superusuário
 
 ```bash
 docker compose exec web python manage.py createsuperuser
 ```
 
-### 5. Acessar
+### 6. Acessar
 
 - Aplicação: [http://localhost:8000](http://localhost:8000)
 - Admin: [http://localhost:8000/admin](http://localhost:8000/admin)
@@ -160,9 +170,10 @@ docker compose exec web python manage.py createsuperuser
 
 | Comando | O que faz |
 |---|---|
-| `docker compose up --build` | Builda a imagem e sobe os containers, com logs no terminal |
-| `docker compose up -d` | Sobe os containers em segundo plano |
+| `docker compose --env-file .env.dev up --build` | Builda a imagem e sobe os containers, com logs no terminal |
+| `docker compose --env-file .env.dev up -d` | Sobe os containers em segundo plano |
 | `docker compose down` | Para e remove os containers |
+| `docker compose down -v` | Para os containers **e apaga o volume do Postgres** (recria o banco do zero) |
 | `docker compose ps` | Lista o status dos containers |
 | `docker compose logs web` | Mostra os logs do container Django |
 | `docker compose logs db` | Mostra os logs do container Postgres |
@@ -180,4 +191,6 @@ Se tiver `make` instalado (Linux/macOS/WSL), os mesmos comandos estão disponív
 
 - **`service "web" is not running`**: verifique se o container caiu com `docker compose logs web` — geralmente é erro de sintaxe no `settings.py` ou dependência faltando.
 - **`NameError: name 'os' is not defined`**: falta `import os` no topo do `bookstore/settings.py`, necessário para ler as variáveis de ambiente do banco.
+- **`database "<nome>" does not exist`**: o volume do Postgres já foi inicializado antes com outro nome de banco/usuário. O script de criação do Postgres só roda na primeira inicialização de um volume vazio — rode `docker compose down -v` para apagar o volume e depois `docker compose --env-file .env.dev up --build` para recriar o banco com os valores atuais do `.env.dev`.
+- **`WARN... variable is not set` ao rodar `docker compose exec`**: é inofensivo. Acontece quando o comando é executado sem `--env-file .env.dev` — o Compose não encontra as variáveis para interpolar no `docker-compose.yml`, mas os containers já em execução continuam usando as variáveis com que foram iniciados.
 - **`make` não reconhecido no PowerShell**: `make` não vem nativo no Windows; use os comandos `docker compose` equivalentes ou instale via Chocolatey/WSL.
