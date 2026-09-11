@@ -1,0 +1,22 @@
+[project]
+name = "bookstore"
+version = "0.1.0"
+description = "Criando bookstore app"
+authors = [
+    {name = "Rogério Fernandes",email = "rog.fernandes@yahoo.com.br"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    "django (>=5.1,<6.0)",
+    "djangorestframework (>=3.18.0,<4.0.0)"
+]
+
+[dependency-groups]
+dev = [
+    "factory-boy (>=3.3.3,<4.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
