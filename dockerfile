@@ -1,4 +1,5 @@
-FROM python:3.12.1-slim as python-base
+# ---------- Stage 1: base com Poetry instalado ----------
+FROM python:3.11-slim AS python-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -13,20 +14,35 @@ ENV PYTHONUNBUFFERED=1 \
 
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
+# Dependências de sistema necessárias para compilar pacotes Python
+# (build-essential/gcc para pacotes com extensões C, libpq-dev para psycopg2)
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         curl \
         build-essential \
         libpq-dev \
         gcc \
-    && pip install poetry \
-    && pip install psycopg2-binary \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+# ---------- Stage 2: instala as dependências do projeto ----------
+FROM python-base AS builder-base
 
 WORKDIR $PYSETUP_PATH
 COPY poetry.lock pyproject.toml ./
+
+# --no-root: não instala o próprio pacote ainda, só as dependências
+# Se você usa uma versão de Poetry >= 1.2, "--only main" substitui "--no-dev"
 RUN poetry install --no-root --only main
+
+# ---------- Stage 3: imagem final, enxuta ----------
+FROM python-base AS production
+
+ENV PATH="$VENV_PATH/bin:$PATH"
+
+# Copia apenas o venv já resolvido do estágio anterior, sem as ferramentas de build
+COPY --from=builder-base $VENV_PATH $VENV_PATH
 
 WORKDIR /app
 COPY . /app/
