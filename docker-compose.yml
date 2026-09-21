@@ -1,8 +1,6 @@
-version: '3.9'
-
 services:
   db:
-    image: postgres:13.0-alpine
+    image: postgres:16-alpine
     ports:
       - "5432:5432"
     volumes:
@@ -11,6 +9,11 @@ services:
       - POSTGRES_USER=bookstore_dev
       - POSTGRES_PASSWORD=bookstore_dev
       - POSTGRES_DB=bookstore_dev_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookstore_dev -d bookstore_dev_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   web:
     build:
@@ -24,7 +27,8 @@ services:
     env_file:
       - ./env.dev
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
