@@ -70,16 +70,26 @@ bookstore-docker2/
 ### Containers e comunicação
 
 ```text
-┌───────────────────────────────┐        ┌───────────────────────────────┐
-│         web (Django)          │        │        db (PostgreSQL)        │
-│  imagem: bookstore-docker2    │  SQL   │   imagem: postgres:16-alpine  │
-│  porta: 8000 → 8000            │───────▶│  porta: 5432 → 5432            │
-│  lê variáveis de .env.dev      │        │  volume: postgres_data         │
-└───────────────────────────────┘        └───────────────────────────────┘
-        depende de: db (aguarda healthcheck do banco)
+                        rede: bookstore_network (bridge)
+┌───────────────────────────┐              ┌───────────────────────────┐
+│       web (Django)        │              │       db (PostgreSQL)     │
+│ imagem: bookstore-docker2 │──────SQL────▶│  imagem: postgres:16-alpine │
+│ porta: 8000 → 8000         │              │  porta: 5432 → 5432         │
+│ lê variáveis de .env.dev   │              │  volume: postgres_data      │
+└───────────────────────────┘              └───────────────────────────┘
+        depende_de: db (aguarda healthcheck do banco)
 ```
 
-Os dois serviços rodam na mesma rede interna criada pelo Docker Compose (`bookstore-docker2_default`), e o `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost`.
+Os dois serviços são conectados explicitamente a uma rede *bridge* própria, declarada em `docker-compose.yml` e chamada `bookstore_network`, em vez de depender da rede *default* implícita que o Compose criaria automaticamente. Isso deixa a topologia de rede documentada no próprio arquivo e facilita adicionar novos serviços (cache, worker, etc.) no futuro.
+
+O `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost` — a resolução de nomes funciona porque ambos os containers estão na mesma rede, via DNS interno do Docker.
+
+```yaml
+networks:
+  bookstore_network:
+    driver: bridge
+    name: bookstore_network
+```
 
 ---
 
@@ -101,18 +111,10 @@ git clone https://github.com/RogerioFernandesSilva/bookstore-docker2.git
 cd bookstore-docker2
 ```
 
-### 2. Configurar as variáveis de ambiente
-
-Copie o arquivo de exemplo e ajuste os valores conforme necessário:
+### 2. Build e subida dos containers
 
 ```bash
-cp .env.dev.example .env.dev
-```
-
-### 3. Build e subida dos containers
-
-```bash
-docker compose --env-file .env.dev up --build
+docker compose up --build
 ```
 
 Isso sobe dois serviços:
@@ -122,12 +124,10 @@ Isso sobe dois serviços:
 Para rodar em segundo plano (sem travar o terminal):
 
 ```bash
-docker compose --env-file .env.dev up -d
+docker compose up -d
 ```
 
-> 💡 Se o arquivo se chamar apenas `.env` (em vez de `.env.dev`), o Docker Compose lê as variáveis automaticamente e a flag `--env-file` pode ser omitida.
-
-### 4. Aplicar as migrações
+### 3. Aplicar as migrações
 
 Em outro terminal, com os containers em execução:
 
@@ -135,16 +135,28 @@ Em outro terminal, com os containers em execução:
 docker compose exec web python manage.py migrate
 ```
 
-### 5. Criar um superusuário
+### 4. Criar um superusuário
 
 ```bash
 docker compose exec web python manage.py createsuperuser
 ```
 
-### 6. Acessar
+### 5. Acessar
 
 - Aplicação: [http://localhost:8000](http://localhost:8000)
 - Admin: [http://localhost:8000/admin](http://localhost:8000/admin)
+
+### 6. Verificar a rede (opcional)
+
+Para confirmar que os containers estão conectados à rede `bookstore_network`:
+
+```bash
+docker compose ps
+docker network inspect bookstore_network
+docker compose exec web ping -c 3 db
+```
+
+O `network inspect` deve listar os containers `web` e `db` em `"Containers"`, e o `ping` deve responder pelo nome `db`, confirmando a comunicação entre eles.
 
 ---
 
@@ -170,13 +182,14 @@ docker compose exec web python manage.py createsuperuser
 
 | Comando | O que faz |
 |---|---|
-| `docker compose --env-file .env.dev up --build` | Builda a imagem e sobe os containers, com logs no terminal |
-| `docker compose --env-file .env.dev up -d` | Sobe os containers em segundo plano |
+| `docker compose up --build` | Builda a imagem e sobe os containers, com logs no terminal |
+| `docker compose up -d` | Sobe os containers em segundo plano |
 | `docker compose down` | Para e remove os containers |
-| `docker compose down -v` | Para os containers **e apaga o volume do Postgres** (recria o banco do zero) |
 | `docker compose ps` | Lista o status dos containers |
 | `docker compose logs web` | Mostra os logs do container Django |
 | `docker compose logs db` | Mostra os logs do container Postgres |
+| `docker network ls` | Lista todas as redes Docker disponíveis |
+| `docker network inspect bookstore_network` | Mostra detalhes da rede e quais containers estão conectados a ela |
 | `docker compose exec web python manage.py migrate` | Aplica as migrações |
 | `docker compose exec web python manage.py createsuperuser` | Cria um superusuário |
 | `docker compose exec web python manage.py shell` | Abre o shell interativo do Django dentro do container |
@@ -191,6 +204,6 @@ Se tiver `make` instalado (Linux/macOS/WSL), os mesmos comandos estão disponív
 
 - **`service "web" is not running`**: verifique se o container caiu com `docker compose logs web` — geralmente é erro de sintaxe no `settings.py` ou dependência faltando.
 - **`NameError: name 'os' is not defined`**: falta `import os` no topo do `bookstore/settings.py`, necessário para ler as variáveis de ambiente do banco.
-- **`database "<nome>" does not exist`**: o volume do Postgres já foi inicializado antes com outro nome de banco/usuário. O script de criação do Postgres só roda na primeira inicialização de um volume vazio — rode `docker compose down -v` para apagar o volume e depois `docker compose --env-file .env.dev up --build` para recriar o banco com os valores atuais do `.env.dev`.
-- **`WARN... variable is not set` ao rodar `docker compose exec`**: é inofensivo. Acontece quando o comando é executado sem `--env-file .env.dev` — o Compose não encontra as variáveis para interpolar no `docker-compose.yml`, mas os containers já em execução continuam usando as variáveis com que foram iniciados.
 - **`make` não reconhecido no PowerShell**: `make` não vem nativo no Windows; use os comandos `docker compose` equivalentes ou instale via Chocolatey/WSL.
+- **`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`**: o Docker Desktop não está aberto/rodando no Windows. Abra o aplicativo Docker Desktop, aguarde o status mudar para "Engine running" e rode `docker info` para confirmar antes de repetir o comando. Se persistir, tente `wsl --update` (PowerShell como administrador) e reinicie o Docker Desktop.
+- **`docker network inspect bookstore_network` retorna `[]` ou erro "not found"**: a rede só é criada quando os containers sobem pela primeira vez com `docker compose up`. Rode `docker compose up -d --build` antes de inspecionar a rede.
