@@ -70,16 +70,26 @@ bookstore-docker2/
 ### Containers e comunicação
 
 ```text
-┌─────────────────────────────┐        ┌─────────────────────────────┐
-│         web (Django)        │        │        db (PostgreSQL)      │
-│  imagem: bookstore-docker2  │        │   imagem: postgres:16-alpine│
-│  porta: 8000 → 8000          │───────▶│  porta: 5432 → 5432          │
-│  lê variáveis de .env.dev    │  SQL   │  volume: postgres_data       │
-└─────────────────────────────┘        └─────────────────────────────┘
+                        rede: bookstore_network (bridge)
+┌───────────────────────────┐              ┌───────────────────────────┐
+│       web (Django)        │              │       db (PostgreSQL)     │
+│ imagem: bookstore-docker2 │──────SQL────▶│  imagem: postgres:16-alpine │
+│ porta: 8000 → 8000         │              │  porta: 5432 → 5432         │
+│ lê variáveis de .env.dev   │              │  volume: postgres_data      │
+└───────────────────────────┘              └───────────────────────────┘
         depende_de: db (aguarda healthcheck do banco)
 ```
 
-Os dois serviços rodam na mesma rede interna criada pelo Docker Compose (`bookstore-docker2_default`), e o `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost`.
+Os dois serviços são conectados explicitamente a uma rede *bridge* própria, declarada em `docker-compose.yml` e chamada `bookstore_network`, em vez de depender da rede *default* implícita que o Compose criaria automaticamente. Isso deixa a topologia de rede documentada no próprio arquivo e facilita adicionar novos serviços (cache, worker, etc.) no futuro.
+
+O `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost` — a resolução de nomes funciona porque ambos os containers estão na mesma rede, via DNS interno do Docker.
+
+```yaml
+networks:
+  bookstore_network:
+    driver: bridge
+    name: bookstore_network
+```
 
 ---
 
@@ -136,6 +146,18 @@ docker compose exec web python manage.py createsuperuser
 - Aplicação: [http://localhost:8000](http://localhost:8000)
 - Admin: [http://localhost:8000/admin](http://localhost:8000/admin)
 
+### 6. Verificar a rede (opcional)
+
+Para confirmar que os containers estão conectados à rede `bookstore_network`:
+
+```bash
+docker compose ps
+docker network inspect bookstore_network
+docker compose exec web ping -c 3 db
+```
+
+O `network inspect` deve listar os containers `web` e `db` em `"Containers"`, e o `ping` deve responder pelo nome `db`, confirmando a comunicação entre eles.
+
 ---
 
 ## Variáveis de ambiente (`.env.dev`)
@@ -166,6 +188,8 @@ docker compose exec web python manage.py createsuperuser
 | `docker compose ps` | Lista o status dos containers |
 | `docker compose logs web` | Mostra os logs do container Django |
 | `docker compose logs db` | Mostra os logs do container Postgres |
+| `docker network ls` | Lista todas as redes Docker disponíveis |
+| `docker network inspect bookstore_network` | Mostra detalhes da rede e quais containers estão conectados a ela |
 | `docker compose exec web python manage.py migrate` | Aplica as migrações |
 | `docker compose exec web python manage.py createsuperuser` | Cria um superusuário |
 | `docker compose exec web python manage.py shell` | Abre o shell interativo do Django dentro do container |
@@ -181,3 +205,5 @@ Se tiver `make` instalado (Linux/macOS/WSL), os mesmos comandos estão disponív
 - **`service "web" is not running`**: verifique se o container caiu com `docker compose logs web` — geralmente é erro de sintaxe no `settings.py` ou dependência faltando.
 - **`NameError: name 'os' is not defined`**: falta `import os` no topo do `bookstore/settings.py`, necessário para ler as variáveis de ambiente do banco.
 - **`make` não reconhecido no PowerShell**: `make` não vem nativo no Windows; use os comandos `docker compose` equivalentes ou instale via Chocolatey/WSL.
+- **`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`**: o Docker Desktop não está aberto/rodando no Windows. Abra o aplicativo Docker Desktop, aguarde o status mudar para "Engine running" e rode `docker info` para confirmar antes de repetir o comando. Se persistir, tente `wsl --update` (PowerShell como administrador) e reinicie o Docker Desktop.
+- **`docker network inspect bookstore_network` retorna `[]` ou erro "not found"**: a rede só é criada quando os containers sobem pela primeira vez com `docker compose up`. Rode `docker compose up -d --build` antes de inspecionar a rede.
