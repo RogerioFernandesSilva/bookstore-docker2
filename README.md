@@ -22,6 +22,7 @@ Desenvolvido como exercício do curso Python Back-End (EBAC), módulo de contain
 - [Como rodar o projeto](#como-rodar-o-projeto)
 - [Variáveis de ambiente](#variáveis-de-ambiente-envdev)
 - [Comandos úteis](#comandos-úteis)
+- [CI/CD com GitHub Actions](#cicd-com-github-actions)
 - [Solução de problemas](#solução-de-problemas)
 
 ---
@@ -32,9 +33,10 @@ Desenvolvido como exercício do curso Python Back-End (EBAC), módulo de contain
 - **Banco de dados PostgreSQL 16** rodando em container próprio, com volume persistente e healthcheck (o container `web` só sobe depois que o banco está pronto para aceitar conexões).
 - **Gerenciamento de dependências com Poetry**, isolado em virtualenv dentro do próprio container (`POETRY_VIRTUALENVS_IN_PROJECT`).
 - **Build multi-stage no Dockerfile**: um estágio (`builder-base`) instala o Poetry e resolve as dependências; o estágio final (`production`) apenas copia o virtualenv já pronto, gerando uma imagem final mais enxuta.
-- **Configuração via variáveis de ambiente** (`.env.dev`): o Django lê `SQL_ENGINE`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`, `SQL_HOST` e `SQL_PORT` para conectar ao Postgres, com fallback para SQLite caso essas variáveis não existam.
+- **Configuração via variáveis de ambiente** (`env.dev`): o Django lê `SQL_ENGINE`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`, `SQL_HOST` e `SQL_PORT` para conectar ao Postgres, com fallback para SQLite caso essas variáveis não existam.
 - **Hot reload em desenvolvimento**: o código-fonte é montado como volume no container `web`, então alterações no código refletem sem precisar rebuildar a imagem.
 - **Painel administrativo do Django** (`/admin`) disponível após criação de superusuário.
+- **Integração contínua com GitHub Actions**: a cada push/PR, o workflow builda a imagem, sobe os containers, roda as migrações e executa os testes automaticamente.
 
 ---
 
@@ -55,31 +57,43 @@ bookstore-docker2/
 │   ├── urls.py
 │   ├── wsgi.py
 │   └── asgi.py
-├── .dockerignore                # exclui .venv, __pycache__, db.sqlite3, .git do build
-├── .env.dev                     # variáveis de ambiente (não versionar com segredo real)
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # pipeline de integração contínua (build, migrate, test)
+├── .dockerignore                 # exclui .venv, __pycache__, db.sqlite3, .git do build
 ├── .gitignore
-├── docker-compose.yml           # orquestra os serviços web + db
-├── dockerfile                   # build multi-stage da imagem da aplicação
-├── Makefile                     # atalhos de comandos (build, migrate, testes, lint)
+├── docker-compose.yml            # orquestra os serviços web + db
+├── dockerfile                    # build multi-stage da imagem da aplicação
+├── env.dev                       # variáveis de ambiente de desenvolvimento
 ├── manage.py
 ├── poetry.lock
-├── pyproject.toml               # dependências gerenciadas pelo Poetry
+├── pyproject.toml                # dependências gerenciadas pelo Poetry
 └── README.md
 ```
 
 ### Containers e comunicação
 
 ```text
-┌─────────────────────────────┐        ┌─────────────────────────────┐
-│         web (Django)        │        │        db (PostgreSQL)      │
-│  imagem: bookstore-docker2  │        │   imagem: postgres:16-alpine│
-│  porta: 8000 → 8000          │───────▶│  porta: 5432 → 5432          │
-│  lê variáveis de .env.dev    │  SQL   │  volume: postgres_data       │
-└─────────────────────────────┘        └─────────────────────────────┘
+                        rede: bookstore_network (bridge)
+┌───────────────────────────┐              ┌───────────────────────────┐
+│       web (Django)        │              │       db (PostgreSQL)     │
+│ imagem: bookstore-docker2 │──────SQL────▶│  imagem: postgres:16-alpine │
+│ porta: 8000 → 8000         │              │  porta: 5432 → 5432         │
+│ lê variáveis de env.dev    │              │  volume: postgres_data      │
+└───────────────────────────┘              └───────────────────────────┘
         depende_de: db (aguarda healthcheck do banco)
 ```
 
-Os dois serviços rodam na mesma rede interna criada pelo Docker Compose (`bookstore-docker2_default`), e o `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost`.
+Os dois serviços são conectados explicitamente a uma rede *bridge* própria, declarada em `docker-compose.yml` e chamada `bookstore_network`, em vez de depender da rede *default* implícita que o Compose criaria automaticamente. Isso deixa a topologia de rede documentada no próprio arquivo e facilita adicionar novos serviços (cache, worker, etc.) no futuro.
+
+O `web` se conecta ao `db` usando o nome do serviço (`SQL_HOST=db`) em vez de `localhost` — a resolução de nomes funciona porque ambos os containers estão na mesma rede, via DNS interno do Docker.
+
+```yaml
+networks:
+  bookstore_network:
+    driver: bridge
+    name: bookstore_network
+```
 
 ---
 
@@ -136,9 +150,21 @@ docker compose exec web python manage.py createsuperuser
 - Aplicação: [http://localhost:8000](http://localhost:8000)
 - Admin: [http://localhost:8000/admin](http://localhost:8000/admin)
 
+### 6. Verificar a rede (opcional)
+
+Para confirmar que os containers estão conectados à rede `bookstore_network`:
+
+```bash
+docker compose ps
+docker network inspect bookstore_network
+docker compose exec web ping -c 3 db
+```
+
+O `network inspect` deve listar os containers `web` e `db` em `"Containers"`, e o `ping` deve responder pelo nome `db`, confirmando a comunicação entre eles.
+
 ---
 
-## Variáveis de ambiente (`.env.dev`)
+## Variáveis de ambiente (`env.dev`)
 
 | Variável | Descrição |
 |---|---|
@@ -152,7 +178,7 @@ docker compose exec web python manage.py createsuperuser
 | `SQL_HOST` | Host do banco (`db`, nome do serviço no Compose) |
 | `SQL_PORT` | Porta do Postgres (`5432`) |
 
-> **Importante:** `.env.dev` não deve ser commitado com segredos reais. Mantenha-o no `.gitignore` e disponibilize um `.env.dev.example` com valores fictícios como referência.
+> **Importante:** os valores em `env.dev` são credenciais de desenvolvimento local (não usadas em produção). Ainda assim, nunca coloque a `SECRET_KEY` real de produção neste arquivo nem em nenhum arquivo versionado — em produção, ela deve vir de uma variável de ambiente/secret do ambiente de deploy, nunca do Git.
 
 ---
 
@@ -163,21 +189,41 @@ docker compose exec web python manage.py createsuperuser
 | `docker compose up --build` | Builda a imagem e sobe os containers, com logs no terminal |
 | `docker compose up -d` | Sobe os containers em segundo plano |
 | `docker compose down` | Para e remove os containers |
+| `docker compose down -v` | Para e remove containers **e volumes** (reseta o banco do zero) |
 | `docker compose ps` | Lista o status dos containers |
 | `docker compose logs web` | Mostra os logs do container Django |
 | `docker compose logs db` | Mostra os logs do container Postgres |
+| `docker network ls` | Lista todas as redes Docker disponíveis |
+| `docker network inspect bookstore_network` | Mostra detalhes da rede e quais containers estão conectados a ela |
 | `docker compose exec web python manage.py migrate` | Aplica as migrações |
 | `docker compose exec web python manage.py createsuperuser` | Cria um superusuário |
+| `docker compose exec web python manage.py test` | Roda a suíte de testes dentro do container |
 | `docker compose exec web python manage.py shell` | Abre o shell interativo do Django dentro do container |
 | `poetry add <pacote>` | Adiciona uma dependência de produção ao projeto |
 | `poetry add --group dev <pacote>` | Adiciona uma dependência de desenvolvimento |
 
-Se tiver `make` instalado (Linux/macOS/WSL), os mesmos comandos estão disponíveis como atalhos no `Makefile` (`make docker-up`, `make docker-migrate`, etc.). No Windows com PowerShell puro, use os comandos `docker compose` diretamente.
+---
+
+## CI/CD com GitHub Actions
+
+O workflow em `.github/workflows/ci.yml` roda automaticamente a cada `push` ou `pull request` para as branches `main`/`develop`. Ele repete, dentro do runner do GitHub, o mesmo fluxo usado localmente:
+
+1. Checkout do código
+2. Geração do `env.dev` (com a `SECRET_KEY` vinda do secret `DJANGO_SECRET_KEY` configurado no repositório)
+3. `docker compose up -d --build`
+4. `docker compose exec web python manage.py migrate`
+5. `docker compose exec web python manage.py test`
+
+O status do último run aparece na aba **Actions** do repositório e nos checks de cada Pull Request.
 
 ---
 
 ## Solução de problemas
 
 - **`service "web" is not running`**: verifique se o container caiu com `docker compose logs web` — geralmente é erro de sintaxe no `settings.py` ou dependência faltando.
+- **`could not translate host name "db" to address`**: o `web` tentou conectar antes do Postgres terminar de inicializar. O `healthcheck` + `depends_on: condition: service_healthy` no `docker-compose.yml` já cobre isso; se ainda ocorrer, rode `docker compose down -v` e suba de novo do zero.
+- **`NotSupportedError: PostgreSQL 14 or later is required`**: a imagem do Postgres está desatualizada em relação à versão mínima exigida pelo Django. Use `postgres:16-alpine` (ou qualquer versão ≥ 14).
 - **`NameError: name 'os' is not defined`**: falta `import os` no topo do `bookstore/settings.py`, necessário para ler as variáveis de ambiente do banco.
 - **`make` não reconhecido no PowerShell**: `make` não vem nativo no Windows; use os comandos `docker compose` equivalentes ou instale via Chocolatey/WSL.
+- **`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`**: o Docker Desktop não está aberto/rodando no Windows. Abra o aplicativo Docker Desktop, aguarde o status mudar para "Engine running" e rode `docker info` para confirmar antes de repetir o comando. Se persistir, tente `wsl --update` (PowerShell como administrador) e reinicie o Docker Desktop.
+- **`docker network inspect bookstore_network` retorna `[]` ou erro "not found"**: a rede só é criada quando os containers sobem pela primeira vez com `docker compose up`. Rode `docker compose up -d --build` antes de inspecionar a rede.

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Gerar arquivo env.dev para o build
+        run: |
+          cat <<EOF > env.dev
+          DEBUG=1
+          SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+          SQL_ENGINE=django.db.backends.postgresql
+          SQL_DATABASE=bookstore_dev_db
+          SQL_USER=bookstore_dev
+          SQL_PASSWORD=bookstore_dev
+          SQL_HOST=db
+          SQL_PORT=5432
+          EOF
+
+      - name: Build dos containers
+        run: docker compose up -d --build
+
+      - name: Rodar migrações
+        run: docker compose exec -T web python manage.py migrate
+
+      - name: Rodar testes
+        run: docker compose exec -T web python manage.py test
+
+      - name: Encerrar containers
+        if: always()
+        run: docker compose down -v
