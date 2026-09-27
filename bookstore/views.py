@@ -10,7 +10,7 @@ def update(request):
     if request.method == "POST":
         # Aponte para o caminho do diretório onde seu projeto está
         # armazenado no PythonAnywhere.
-        repo = git.Repo('/home/SEU_USUARIO/bookstore')
+        repo = git.Repo('/home/rogeriodev81/bookstore-docker2')
         origin = repo.remotes.origin
 
         origin.pull()
