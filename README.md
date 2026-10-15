@@ -65,9 +65,11 @@ bookstore-docker2/
 ├── bookstore/                  # configurações principais do projeto Django
 │   ├── __init__.py
 │   ├── settings.py             # apps, DRF, autenticação e variáveis de ambiente
-│   ├── urls.py                 # admin, API v1/v2, token, webhook e /hello/
-│   ├── views.py                # update_server (webhook de deploy) e hello_world
+│   ├── urls.py                 # home, admin, API v1/v2, token, webhook e /hello/
+│   ├── views.py                # home, hello_world e update_server (webhook de deploy)
+│   ├── tests.py                # testes da página inicial, do /hello/ e da proteção da API
 │   ├── templates/
+│   │   ├── home.html           # página inicial com links para as rotas
 │   │   └── hello_world.html    # página de teste do deploy
 │   ├── wsgi.py
 │   └── asgi.py
@@ -145,6 +147,7 @@ Nos exemplos abaixo, `BASE` é o endereço do servidor: `https://rogeriodev81.py
 | `GET`, `PUT`, `PATCH`, `DELETE` | `/bookstore/v1/order/{id}/` | Consulta, altera e remove um pedido |
 | `POST` | `/api-token-auth/` | Recebe `username` e `password` e devolve o token |
 | `POST` | `/update_server/` | Webhook de deploy (atualiza o código no servidor) |
+| `GET` | `/` | Página inicial com links para as rotas |
 | `GET` | `/hello/` | Página de teste do deploy |
 | — | `/admin/` | Painel administrativo do Django |
 
@@ -320,11 +323,12 @@ docker compose exec web python manage.py createsuperuser
 
 ### 6. Acessar
 
+- Página inicial: [http://localhost:8000/](http://localhost:8000/)
 - Admin: [http://localhost:8000/admin/](http://localhost:8000/admin/)
 - Página de teste: [http://localhost:8000/hello/](http://localhost:8000/hello/)
 - API: [http://localhost:8000/bookstore/v1/product/](http://localhost:8000/bookstore/v1/product/) (peça usuário e senha no navegador, ou use o token como em [Exemplos de uso](#exemplos-de-uso))
 
-A raiz (`/`) não tem página; use as rotas acima.
+A raiz (`/`) mostra uma página inicial com links para as rotas.
 
 ### 7. Verificar a rede (opcional)
 
@@ -384,7 +388,7 @@ O `DEBUG=1` faz o CSS do admin carregar localmente; sem a variável, o `DEBUG` f
 
 ## Testes
 
-O projeto tem **11 testes automatizados** (`product/tests.py` e `order/tests.py`) que cobrem:
+O projeto tem **14 testes automatizados** (`product/tests.py`, `order/tests.py` e `bookstore/tests.py`) que cobrem:
 
 - rotas protegidas respondendo `401` sem credencial;
 - listagem paginada e criação de produtos e categorias com token;
@@ -392,7 +396,8 @@ O projeto tem **11 testes automatizados** (`product/tests.py` e `order/tests.py`
 - rejeição de pedido sem produtos;
 - cada usuário vendo apenas os próprios pedidos;
 - obtenção do token em `/api-token-auth/` e rejeição de senha errada;
-- a rota da versão `v2`.
+- a rota da versão `v2`;
+- a página inicial (`/`), o `/hello/` e a proteção da API contra acesso sem login.
 
 Para executar:
 
@@ -464,7 +469,7 @@ from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 ```
 
-**5. Clique em Reload** e teste `https://SEU_USUARIO.pythonanywhere.com/hello/` e a API conforme [Exemplos de uso](#exemplos-de-uso).
+**5. Clique em Reload** e teste a página inicial (`https://SEU_USUARIO.pythonanywhere.com/`), o `/hello/` e a API conforme [Exemplos de uso](#exemplos-de-uso).
 
 > O plano gratuito tem **512 MB de disco**. Não instale o Poetry no servidor (o `pip` basta) e, depois de qualquer `pip install`, rode `rm -rf ~/.cache/pip` para liberar espaço.
 

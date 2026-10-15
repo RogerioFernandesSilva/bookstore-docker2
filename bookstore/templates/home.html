@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookstore API</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+        code { background: #f0f0f0; padding: 0.1rem 0.35rem; border-radius: 4px; }
+        li { margin: 0.35rem 0; }
+    </style>
+</head>
+<body>
+    <h1>📚 Bookstore API</h1>
+    <p>API REST de uma livraria (produtos, categorias e pedidos) feita com Django e Django REST Framework.</p>
+
+    <h2>Rotas</h2>
+    <ul>
+        <li><a href="/bookstore/v1/product/">/bookstore/v1/product/</a> — produtos</li>
+        <li><a href="/bookstore/v1/category/">/bookstore/v1/category/</a> — categorias</li>
+        <li><a href="/bookstore/v1/order/">/bookstore/v1/order/</a> — pedidos</li>
+        <li><code>POST /api-token-auth/</code> — obtém o token (<code>username</code> e <code>password</code>)</li>
+        <li><a href="/admin/">/admin/</a> — painel administrativo</li>
+        <li><a href="/hello/">/hello/</a> — página de teste do deploy</li>
+    </ul>
+
+    <h2>Autenticação</h2>
+    <p>As rotas <code>/bookstore/...</code> exigem login. Sem credencial a API responde <strong>401</strong>.
+       No navegador, informe usuário e senha quando for solicitado; em clientes HTTP, use o cabeçalho
+       <code>Authorization: Token SEU_TOKEN</code>.</p>
+
+    <p><small>Código e documentação: <a href="https://github.com/RogerioFernandesSilva/bookstore-docker2">github.com/RogerioFernandesSilva/bookstore-docker2</a></small></p>
+</body>
+</html>
